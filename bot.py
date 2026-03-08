@@ -128,6 +128,8 @@ def main() -> None:
         api_key_id=config.KALSHI_API_KEY_ID,
         private_key_path=config.KALSHI_PRIVATE_KEY_PATH,
         base_url=config.KALSHI_BASE_URL,
+        trades_csv_path=config.TRADES_CSV_PATH,
+        btc_series_ticker=config.BTC_SERIES_TICKER_HOURLY,
     )
     risk_manager = RiskManager(cfg=config)
     strategy = HourlyStrategy(client=client, cfg=config, risk_manager=risk_manager)
