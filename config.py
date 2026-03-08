@@ -59,6 +59,7 @@ MIN_CONFIDENCE: float = float(os.getenv("MIN_CONFIDENCE", "0.12"))
 MIN_EDGE_CENTS: int = int(os.getenv("MIN_EDGE_CENTS", "3"))
 MAX_SPREAD_CENTS: int = int(os.getenv("MAX_SPREAD_CENTS", "5"))
 LOOKBACK_HOURS: int = int(os.getenv("LOOKBACK_HOURS", "3"))
+MOMENTUM_THRESHOLD: float = float(os.getenv("MOMENTUM_THRESHOLD", "0.5"))
 TIME_TO_EXPIRY_MIN_MINUTES: int = int(os.getenv("TIME_TO_EXPIRY_MIN_MINUTES", "5"))
 
 # ---------------------------------------------------------------------------

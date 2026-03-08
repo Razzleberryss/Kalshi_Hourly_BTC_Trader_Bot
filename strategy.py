@@ -13,7 +13,7 @@ Strategy overview:
 import logging
 import math
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from kalshi_client import KalshiClient
@@ -512,3 +512,285 @@ class HourlyStrategy:
             len(rm.open_positions),
             rm.daily_trades,
         )
+
+
+class HourlyBTCStrategy:
+    """
+    Hourly BTC signal logic implementing the full interface for the trading bot.
+    Reads all parameters from cfg (config module or namespace).
+
+    This class exposes the explicit public API used by the main loop:
+      - get_signal(market_ticker, orderbook, price_history) -> dict
+      - calculate_net_edge(entry_price, exit_price, side) -> float
+      - check_spread(orderbook) -> bool
+      - check_time_to_expiry(market) -> bool
+    """
+
+    def __init__(self, cfg: Any) -> None:
+        """
+        Initialise the strategy with a config object.
+
+        Args:
+            cfg: Config module or SimpleNamespace with all required attributes:
+                 MIN_CONFIDENCE, MIN_EDGE_CENTS, MAX_SPREAD_CENTS,
+                 LOOKBACK_HOURS, TIME_TO_EXPIRY_MIN_MINUTES,
+                 MOMENTUM_THRESHOLD, TAKE_PROFIT_CENTS.
+        """
+        self._cfg = cfg
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def get_signal(
+        self,
+        market_ticker: str,
+        orderbook: dict,
+        price_history: list,
+    ) -> dict:
+        """
+        Derive a directional signal combining momentum and order-book skew.
+
+        Args:
+            market_ticker: Kalshi market ticker (used for logging).
+            orderbook:     Orderbook dict with "yes" and "no" level lists,
+                           each entry being [price_cents, size].
+            price_history: List of BTC prices (floats), oldest → newest.
+                           Each entry represents one hour of data.
+
+        Returns:
+            Dict with keys:
+              signal ("yes" | "no" | "none"), confidence (0.0–1.0),
+              entry_price_cents (int), expected_net_edge_cents (float).
+        """
+        cfg = self._cfg
+
+        _none = {
+            "signal": "none",
+            "confidence": 0.0,
+            "entry_price_cents": 50,
+            "expected_net_edge_cents": 0.0,
+        }
+
+        # ---- Spread guard ------------------------------------------------
+        if not self.check_spread(orderbook):
+            logger.debug("%s — spread too wide, no signal.", market_ticker)
+            return _none
+
+        yes_levels: list = orderbook.get("yes", [])
+        no_levels: list = orderbook.get("no", [])
+
+        # ---- Momentum signal (from price_history) ------------------------
+        window = price_history[-cfg.LOOKBACK_HOURS:] if price_history else []
+
+        momentum_direction: Literal["yes", "no"] | None = None
+        momentum_score: float = 0.0
+
+        if len(window) >= 2:
+            oldest_price = window[0]
+            latest_price = window[-1]
+
+            if oldest_price != 0:
+                pct_change = (latest_price - oldest_price) / oldest_price * 100.0
+            else:
+                pct_change = 0.0
+
+            threshold = cfg.MOMENTUM_THRESHOLD
+            if pct_change > threshold:
+                momentum_direction = "yes"
+                momentum_score = min(1.0, pct_change / (threshold * 3))
+            elif pct_change < -threshold:
+                momentum_direction = "no"
+                momentum_score = min(1.0, abs(pct_change) / (threshold * 3))
+
+        # ---- Skew signal (from orderbook) --------------------------------
+        skew_direction: Literal["yes", "no"] | None = None
+        skew_score: float = 0.0
+
+        if yes_levels and no_levels:
+            yes_top_vol = yes_levels[0][1] if len(yes_levels[0]) > 1 else 0
+            no_top_vol = no_levels[0][1] if len(no_levels[0]) > 1 else 0
+            total_vol = yes_top_vol + no_top_vol
+
+            if total_vol > 0:
+                # > 0 means NO-heavy → favour YES
+                imbalance = (no_top_vol - yes_top_vol) / total_vol
+                if imbalance > 0:
+                    skew_direction = "yes"
+                    skew_score = min(1.0, abs(imbalance))
+                elif imbalance < 0:
+                    skew_direction = "no"
+                    skew_score = min(1.0, abs(imbalance))
+
+        # ---- Combine signals ---------------------------------------------
+        if momentum_direction is not None and skew_direction == momentum_direction:
+            # Both agree — apply agreement bonus
+            combined_direction = momentum_direction
+            confidence = min(1.0, (momentum_score + skew_score) / 2 * 1.2)
+        elif momentum_direction is not None and (
+            skew_direction is None or skew_direction != momentum_direction
+        ):
+            # Only momentum fires (or skew disagrees)
+            combined_direction = momentum_direction
+            confidence = momentum_score * 0.7
+        elif skew_direction is not None and (
+            momentum_direction is None or momentum_direction != skew_direction
+        ):
+            # Only skew fires (or momentum disagrees)
+            combined_direction = skew_direction
+            confidence = skew_score * 0.5
+        else:
+            logger.debug("%s — no signal: neither momentum nor skew fired.", market_ticker)
+            return _none
+
+        # ---- Confidence threshold ----------------------------------------
+        if confidence < cfg.MIN_CONFIDENCE:
+            logger.debug(
+                "%s — confidence %.3f below threshold %.3f, no signal.",
+                market_ticker,
+                confidence,
+                cfg.MIN_CONFIDENCE,
+            )
+            return _none
+
+        # ---- Entry price -------------------------------------------------
+        if combined_direction == "yes":
+            raw_entry = (100 - no_levels[0][0]) if no_levels else 50
+        else:
+            raw_entry = (100 - yes_levels[0][0]) if yes_levels else 50
+        entry_price_cents = max(1, min(99, raw_entry))
+
+        # ---- Net edge check ----------------------------------------------
+        take_profit_price = max(1, min(99, entry_price_cents + cfg.TAKE_PROFIT_CENTS))
+        net_edge = self.calculate_net_edge(entry_price_cents, take_profit_price, combined_direction)
+        if net_edge < cfg.MIN_EDGE_CENTS:
+            logger.debug(
+                "%s — net edge %.1f¢ below minimum %d¢, no signal.",
+                market_ticker,
+                net_edge,
+                cfg.MIN_EDGE_CENTS,
+            )
+            return _none
+
+        logger.info(
+            "%s — signal=%s confidence=%.3f entry=%d¢ net_edge=%.1f¢",
+            market_ticker,
+            combined_direction,
+            confidence,
+            entry_price_cents,
+            net_edge,
+        )
+
+        return {
+            "signal": combined_direction,
+            "confidence": confidence,
+            "entry_price_cents": entry_price_cents,
+            "expected_net_edge_cents": net_edge,
+        }
+
+    def calculate_net_edge(self, entry_price: int, exit_price: int, side: str) -> float:
+        """
+        Calculate net edge after entry and exit fees.
+
+        Fee formula: max(1, ceil(0.07 * price * (100 - price) / 100))
+        Gross PnL = exit_price - entry_price (same for both sides in Kalshi).
+
+        Args:
+            entry_price: Entry price in cents (1–99).
+            exit_price:  Expected exit price in cents (1–99).
+            side:        "yes" or "no" (currently symmetric; reserved for future use).
+
+        Returns:
+            Net edge in cents as a float.
+        """
+        entry_fee = max(1, math.ceil(0.07 * entry_price * (100 - entry_price) / 100))
+        exit_fee = max(1, math.ceil(0.07 * exit_price * (100 - exit_price) / 100))
+        gross_pnl = exit_price - entry_price
+        net_edge = gross_pnl - entry_fee - exit_fee
+        return float(net_edge)
+
+    def check_spread(self, orderbook: dict) -> bool:
+        """
+        Return True if the YES-side spread is within the configured maximum.
+
+        Spread = best_ask_yes - best_bid_yes
+               = (100 - best_bid_no) - best_bid_yes
+
+        Args:
+            orderbook: Orderbook dict with "yes" and "no" level lists.
+
+        Returns:
+            True if spread <= MAX_SPREAD_CENTS, False otherwise.
+        """
+        yes_levels: list = orderbook.get("yes", [])
+        no_levels: list = orderbook.get("no", [])
+
+        if not yes_levels or not no_levels:
+            logger.warning("check_spread: empty yes or no levels in orderbook.")
+            return False
+
+        best_bid_yes = yes_levels[0][0]
+        best_bid_no = no_levels[0][0]
+        best_ask_yes = 100 - best_bid_no
+        spread = best_ask_yes - best_bid_yes
+
+        if spread > self._cfg.MAX_SPREAD_CENTS:
+            logger.warning(
+                "check_spread: spread %d¢ exceeds max %d¢.",
+                spread,
+                self._cfg.MAX_SPREAD_CENTS,
+            )
+            return False
+
+        return True
+
+    def check_time_to_expiry(
+        self,
+        market: dict,
+        current_time: datetime | None = None,
+    ) -> bool:
+        """
+        Return True if there is enough time before market expiry to trade.
+
+        Args:
+            market:       Market dict from the Kalshi API containing "close_time"
+                          or "expiration_time" in ISO-8601 format.
+            current_time: Override for "now" (UTC). Defaults to
+                          ``datetime.now(timezone.utc)``. Pass an explicit value
+                          in tests to ensure deterministic behaviour.
+
+        Returns:
+            False if fewer than TIME_TO_EXPIRY_MIN_MINUTES remain, True otherwise.
+            Returns True (safe default) when close_time is missing or unparseable.
+        """
+        close_time = market.get("close_time") or market.get("expiration_time", "")
+
+        if not close_time:
+            logger.warning(
+                "check_time_to_expiry: market %s has no close_time — allowing trade.",
+                market.get("ticker", "?"),
+            )
+            return True
+
+        now_utc = current_time if current_time is not None else datetime.now(timezone.utc)
+
+        try:
+            close_dt = datetime.fromisoformat(close_time.replace("Z", "+00:00"))
+            minutes_remaining = (close_dt - now_utc).total_seconds() / 60.0
+        except ValueError as exc:
+            logger.warning(
+                "check_time_to_expiry: could not parse close_time '%s': %s — allowing trade.",
+                close_time,
+                exc,
+            )
+            return True
+
+        if minutes_remaining < self._cfg.TIME_TO_EXPIRY_MIN_MINUTES:
+            logger.warning(
+                "check_time_to_expiry: only %.1f min remain (min=%d) — blocking trade.",
+                minutes_remaining,
+                self._cfg.TIME_TO_EXPIRY_MIN_MINUTES,
+            )
+            return False
+
+        return True
