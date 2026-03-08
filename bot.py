@@ -96,7 +96,7 @@ def _setup_logging() -> None:
 _shutdown_requested: bool = False
 
 
-def _request_shutdown(signum: int, frame: Any) -> None:  # noqa: ANN001
+def _request_shutdown(signum: int, frame: Any) -> None:
     """SIGTERM handler: set flag so the main loop exits cleanly."""
     global _shutdown_requested  # noqa: PLW0603
     _shutdown_requested = True

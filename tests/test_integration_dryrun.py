@@ -224,9 +224,9 @@ class TestDryRunCycles:
 
         # If place_order was called, it must have been called with dry_run=True
         for call in client.place_order.call_args_list:
-            assert call.kwargs.get("dry_run") is True or (
-                len(call.args) >= 5 and call.args[4] is True
-            ), "place_order must receive dry_run=True"
+            assert call.kwargs.get("dry_run") is True, (
+                "place_order must receive dry_run=True"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -263,11 +263,7 @@ class TestOpenPositionExits:
         """Assert that record_trade_close was called once with the expected reason."""
         risk_manager.record_trade_close.assert_called_once()
         call_args = risk_manager.record_trade_close.call_args
-        # Accept both positional and keyword argument styles
-        if call_args.kwargs:
-            actual_reason = call_args.kwargs.get("exit_reason")
-        else:
-            actual_reason = call_args.args[2]
+        actual_reason = call_args.kwargs.get("exit_reason")
         assert actual_reason == expected_reason, (
             f"Expected exit_reason={expected_reason!r}, got {actual_reason!r}"
         )
@@ -582,10 +578,7 @@ class TestGracefulShutdown:
         )
         risk_manager.record_trade_close.assert_called_once()
         call_args = risk_manager.record_trade_close.call_args
-        if call_args.kwargs:
-            assert call_args.kwargs.get("exit_reason") == "shutdown"
-        else:
-            assert call_args.args[2] == "shutdown"
+        assert call_args.kwargs.get("exit_reason") == "shutdown"
 
     def test_no_positions_is_noop(self):
         """_close_all_positions() does nothing when there are no open positions."""
