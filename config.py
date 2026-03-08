@@ -62,6 +62,9 @@ LOOKBACK_HOURS: int = int(os.getenv("LOOKBACK_HOURS", "3"))
 MOMENTUM_THRESHOLD: float = float(os.getenv("MOMENTUM_THRESHOLD", "0.5"))
 TIME_TO_EXPIRY_MIN_MINUTES: int = int(os.getenv("TIME_TO_EXPIRY_MIN_MINUTES", "5"))
 
+# How often the main loop polls for new signals (seconds)
+POLL_INTERVAL_SECONDS: int = int(os.getenv("POLL_INTERVAL_SECONDS", "60"))
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
