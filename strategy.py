@@ -13,7 +13,7 @@ Strategy overview:
 import logging
 import math
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from kalshi_client import KalshiClient
@@ -583,7 +583,7 @@ class HourlyBTCStrategy:
         # ---- Momentum signal (from price_history) ------------------------
         window = price_history[-cfg.LOOKBACK_HOURS:] if price_history else []
 
-        momentum_direction: str | None = None
+        momentum_direction: Literal["yes", "no"] | None = None
         momentum_score: float = 0.0
 
         if len(window) >= 2:
@@ -604,7 +604,7 @@ class HourlyBTCStrategy:
                 momentum_score = min(1.0, abs(pct_change) / (threshold * 3))
 
         # ---- Skew signal (from orderbook) --------------------------------
-        skew_direction: str | None = None
+        skew_direction: Literal["yes", "no"] | None = None
         skew_score: float = 0.0
 
         if yes_levels and no_levels:

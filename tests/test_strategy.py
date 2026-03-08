@@ -26,7 +26,16 @@ from strategy import HourlyBTCStrategy
 
 
 def _make_cfg(**overrides):
-    """Return a minimal config-like namespace for HourlyBTCStrategy tests."""
+    """
+    Return a minimal config-like namespace for HourlyBTCStrategy tests.
+
+    All strategy parameters can be overridden via keyword arguments.
+
+    Valid keys (with defaults):
+      MIN_CONFIDENCE=0.12, MIN_EDGE_CENTS=3, MAX_SPREAD_CENTS=5,
+      LOOKBACK_HOURS=3, TIME_TO_EXPIRY_MIN_MINUTES=5,
+      MOMENTUM_THRESHOLD=0.5, TAKE_PROFIT_CENTS=22.
+    """
     defaults = dict(
         MIN_CONFIDENCE=0.12,
         MIN_EDGE_CENTS=3,
