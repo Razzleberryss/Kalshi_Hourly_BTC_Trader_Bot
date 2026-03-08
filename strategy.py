@@ -744,13 +744,20 @@ class HourlyBTCStrategy:
 
         return True
 
-    def check_time_to_expiry(self, market: dict) -> bool:
+    def check_time_to_expiry(
+        self,
+        market: dict,
+        current_time: datetime | None = None,
+    ) -> bool:
         """
         Return True if there is enough time before market expiry to trade.
 
         Args:
-            market: Market dict from the Kalshi API containing "close_time"
-                    or "expiration_time" in ISO-8601 format.
+            market:       Market dict from the Kalshi API containing "close_time"
+                          or "expiration_time" in ISO-8601 format.
+            current_time: Override for "now" (UTC). Defaults to
+                          ``datetime.now(timezone.utc)``. Pass an explicit value
+                          in tests to ensure deterministic behaviour.
 
         Returns:
             False if fewer than TIME_TO_EXPIRY_MIN_MINUTES remain, True otherwise.
@@ -765,11 +772,11 @@ class HourlyBTCStrategy:
             )
             return True
 
+        now_utc = current_time if current_time is not None else datetime.now(timezone.utc)
+
         try:
             close_dt = datetime.fromisoformat(close_time.replace("Z", "+00:00"))
-            minutes_remaining = (
-                close_dt - datetime.now(timezone.utc)
-            ).total_seconds() / 60.0
+            minutes_remaining = (close_dt - now_utc).total_seconds() / 60.0
         except ValueError as exc:
             logger.warning(
                 "check_time_to_expiry: could not parse close_time '%s': %s — allowing trade.",

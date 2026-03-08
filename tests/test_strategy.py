@@ -61,9 +61,16 @@ def _balanced_orderbook(bid_yes: int = 48, bid_no: int = 48):
     }
 
 
-def _iso_future(minutes_from_now: float) -> str:
-    """Return an ISO-8601 UTC timestamp ``minutes_from_now`` minutes in the future."""
-    dt = datetime.now(timezone.utc) + timedelta(minutes=minutes_from_now)
+_FIXED_NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def _iso_offset(minutes: float, base: datetime = _FIXED_NOW) -> str:
+    """
+    Return an ISO-8601 UTC timestamp ``minutes`` from ``base``.
+
+    Uses a fixed base datetime to make tests fully deterministic.
+    """
+    dt = base + timedelta(minutes=minutes)
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
@@ -109,11 +116,11 @@ def test_signal_none_near_expiry():
     cfg = _make_cfg(TIME_TO_EXPIRY_MIN_MINUTES=5)
     strat = HourlyBTCStrategy(cfg)
 
-    market_near = {"close_time": _iso_future(3)}
-    market_far = {"close_time": _iso_future(10)}
+    market_near = {"close_time": _iso_offset(3)}
+    market_far = {"close_time": _iso_offset(10)}
 
-    assert strat.check_time_to_expiry(market_near) is False
-    assert strat.check_time_to_expiry(market_far) is True
+    assert strat.check_time_to_expiry(market_near, current_time=_FIXED_NOW) is False
+    assert strat.check_time_to_expiry(market_far, current_time=_FIXED_NOW) is True
 
 
 def test_calculate_net_edge_formula():
