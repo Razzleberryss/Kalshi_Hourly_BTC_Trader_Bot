@@ -20,7 +20,9 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# CSV column order
+# 20% safety buffer: require balance >= order_cost * BALANCE_SAFETY_MULTIPLIER
+# before placing any trade, to cover potential fee or slippage overage.
+BALANCE_SAFETY_MULTIPLIER: float = 1.2
 _CSV_COLUMNS = [
     "timestamp",       # Entry timestamp (UTC ISO-8601)
     "market_id",
@@ -171,7 +173,7 @@ class RiskManager:
                 f">= {cfg.MAX_TOTAL_EXPOSURE_CENTS}¢",
             )
 
-        min_required = int(order_cost_cents * 1.2)
+        min_required = int(order_cost_cents * BALANCE_SAFETY_MULTIPLIER)
         if balance_cents < min_required:
             return (
                 False,

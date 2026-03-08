@@ -232,6 +232,8 @@ class HourlyStrategy:
             # cents and the mid-price is used for PnL comparisons against
             # cent-denominated stop/take-profit thresholds.
             mid_price = (best_bid_yes + (100 - best_bid_no)) // 2
+        # Mid-price = average of best YES bid and implied YES ask
+        # (implied YES ask = 100 - best NO bid, since YES + NO = 100).
         else:
             mid_price = entry_price  # Can't determine — stay put unless other trigger
 
@@ -316,12 +318,14 @@ class HourlyStrategy:
         for market_id, position in list(rm.open_positions.items()):
             market = market_map.get(market_id)
             if market is None:
-                # Market no longer in open list — assume expired, force close
+                # Market no longer in open list — assume expired, force close.
+                # Use entry_price as exit_price so PnL stats are not skewed by
+                # a spurious 0-cent exit record.
                 logger.warning(
                     "Position %s not found in open markets — forcing expiry close.",
                     market_id,
                 )
-                exit_price = 0  # Cannot determine; record at 0
+                exit_price = position["entry_price"]
                 rm.record_exit(market_id, exit_price, "market_gone",
                                datetime.now(timezone.utc))
                 continue
@@ -339,7 +343,9 @@ class HourlyStrategy:
                 logger.debug("Position %s — hold (no exit trigger).", market_id)
                 continue
 
-            # Determine close price (best bid for our side)
+            # Determine close price (best bid for our side).
+            # Use best available bid; fall back to entry_price so PnL records are
+            # meaningful rather than recording a misleading 0.
             yes_levels = orderbook.get("yes", [])
             no_levels = orderbook.get("no", [])
 

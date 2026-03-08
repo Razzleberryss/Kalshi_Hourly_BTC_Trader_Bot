@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 # API / Connection
 # ---------------------------------------------------------------------------
 # Base URL is hardcoded per spec — never sourced from env to prevent misconfig.
+# Kalshi uses the same REST API v2 endpoint for both demo and prod accounts;
+# the difference lies in the API key used, not the URL.
 KALSHI_BASE_URL: str = "https://api.elections.kalshi.com/trade-api/v2"
 
 KALSHI_ENV: str = os.getenv("KALSHI_ENV", "demo")  # "demo" or "prod"
