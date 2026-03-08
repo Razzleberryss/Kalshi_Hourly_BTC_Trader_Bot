@@ -1,3 +1,4 @@
 httpx>=0.27.0
+requests>=2.31.0
 python-dotenv>=1.0.0
-asyncio; python_version < '3.10'
+cryptography>=41.0.0
