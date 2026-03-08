@@ -13,6 +13,7 @@ other bots or manual trading are NOT included in risk calculations.
 
 import csv
 import logging
+import math
 import os
 from datetime import date, datetime, timezone
 from typing import Any
@@ -21,12 +22,13 @@ logger = logging.getLogger(__name__)
 
 # CSV column order
 _CSV_COLUMNS = [
-    "timestamp",
+    "timestamp",       # Entry timestamp (UTC ISO-8601)
     "market_id",
     "side",
     "quantity",
     "entry_price",
     "exit_price",
+    "exit_timestamp",  # Exit timestamp (UTC ISO-8601); empty until closed
     "pnl_cents",
     "exit_reason",
 ]
@@ -231,6 +233,7 @@ class RiskManager:
                 "quantity": quantity,
                 "entry_price": entry_price,
                 "exit_price": "",
+                "exit_timestamp": "",
                 "pnl_cents": "",
                 "exit_reason": "",
             }
@@ -279,12 +282,13 @@ class RiskManager:
             # NO: profit when YES price falls
             gross_pnl = (entry_price - exit_price) * quantity
 
-        # Approximate fees (see strategy.calc_fee for the exact formula)
+        # Fee formula mirrors strategy.HourlyStrategy.calc_fee() exactly.
+        # Defined inline to avoid a circular import between the two modules.
         fee_per_contract = max(
-            1, int(0.07 * entry_price * (100 - entry_price) / 100 + 0.9999)
+            1, math.ceil(0.07 * entry_price * (100 - entry_price) / 100)
         )
         exit_fee_per_contract = max(
-            1, int(0.07 * exit_price * (100 - exit_price) / 100 + 0.9999)
+            1, math.ceil(0.07 * exit_price * (100 - exit_price) / 100)
         )
         net_pnl = gross_pnl - (fee_per_contract + exit_fee_per_contract) * quantity
 
@@ -383,9 +387,10 @@ class RiskManager:
                 and row.get("exit_price", "").strip() in ("", "None")
             ):
                 row["exit_price"] = str(exit_price)
+                row["exit_timestamp"] = exit_time.isoformat()
                 row["pnl_cents"] = str(pnl_cents)
                 row["exit_reason"] = exit_reason
-                row["timestamp"] = exit_time.isoformat()
+                # NOTE: row["timestamp"] is intentionally preserved as the entry timestamp
                 updated = True
                 break
 

@@ -228,6 +228,9 @@ class HourlyStrategy:
         if yes_levels and no_levels:
             best_bid_yes = yes_levels[0][0]
             best_bid_no = no_levels[0][0]
+            # Integer division is intentional: all Kalshi prices are in whole
+            # cents and the mid-price is used for PnL comparisons against
+            # cent-denominated stop/take-profit thresholds.
             mid_price = (best_bid_yes + (100 - best_bid_no)) // 2
         else:
             mid_price = entry_price  # Can't determine — stay put unless other trigger

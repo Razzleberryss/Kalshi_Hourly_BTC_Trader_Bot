@@ -68,11 +68,15 @@ _LIVE_WARNING_BANNER = """
 # Main loop helpers
 # ---------------------------------------------------------------------------
 
+# Minimum sleep between cycles (seconds) — prevents tight-loop on clock edge
+MIN_SLEEP_SECONDS: int = 60
+
+
 def _seconds_until_next_hour() -> int:
     """Return seconds remaining until the top of the next UTC hour."""
     now = datetime.now(timezone.utc)
     seconds_elapsed = now.minute * 60 + now.second
-    return max(60, 3600 - seconds_elapsed)  # At least 60 s to avoid tight loops
+    return max(MIN_SLEEP_SECONDS, 3600 - seconds_elapsed)
 
 
 # ---------------------------------------------------------------------------

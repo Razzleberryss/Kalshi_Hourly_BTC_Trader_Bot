@@ -300,6 +300,16 @@ class KalshiClient:
         """
         yes_price = 100 - price  # Convert NO price to YES price for the API
 
+        # Validate computed yes_price is within the Kalshi-accepted range (1–99)
+        if not 1 <= yes_price <= 99:
+            logger.warning(
+                "place_order_no: computed yes_price=%d is out of range [1,99] "
+                "(no_price=%d) — order rejected.",
+                yes_price,
+                price,
+            )
+            return None
+
         if dry_run:
             logger.info(
                 "[DRY-RUN] Would place NO order: market=%s qty=%d no_price=%d¢ (yes_price=%d¢)",
